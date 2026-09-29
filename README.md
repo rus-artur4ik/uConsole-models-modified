@@ -5,3 +5,11 @@ Github source for ClockworkPi's official STP and OBJ files for the uConsole, rep
 https://www.clockworkpi.com/product-page/uconsole-3d-models-in-obj-format-free
 
 ![uconsole](https://github.com/user-attachments/assets/4b83cf33-6092-474d-aaeb-d8807baeee94)
+
+### Extracted parts
+
+| Part | Files | Size |
+|------|-------|------|
+| Front panel (screen window, D-pad/button and keyboard cutouts) | [STL](front_panel/uConsole_front_panel.stl) · [STEP](front_panel/uConsole_front_panel.step) | 131 × 174.5 × 3.5 mm |
+
+The front panel was extracted from the original STP (solid `brep_6`) with OpenCascade, keeping the original assembly coordinates. Opening the STL on GitHub shows an interactive 3D preview.
