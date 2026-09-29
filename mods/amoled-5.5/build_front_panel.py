@@ -11,7 +11,7 @@ It also writes a "dummy" body of the display (glass + FPC bend) placed where
 the pocket puts it, to check the fit against the rest of the assembly.
 
 By default the glass and its FPC fold are centred in the stock 131 mm panel,
-which puts the window 2.25 mm off centre. --aa-cx 0 centres the active area
+which puts the window 2.75 mm off centre. --aa-cx 0 centres the active area
 instead; the FPC end of the glass then sticks out past the stock side edge,
 so the panel has to be widened there (--widen fpc|both).
 
@@ -65,8 +65,9 @@ SIDE_STRAIGHT = 75.2  # the side edge is straight up to this Y, then turns into 
 OLD_BEZEL = (-59.6, 59.6, -2.4, 68.8)   # XY box around the stock screen bezel incl. its fillets
 
 
-def parse_args():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def make_parser(doc=__doc__):
+    """Display and layout options, shared with build_middle_frame.py so both parts agree."""
+    p = argparse.ArgumentParser(description=doc, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--src', default=os.path.join(REPO, 'front_panel', 'uConsole_front_panel.step'))
     p.add_argument('--out', default=HERE)
     # Display. BOE BO055FHM datasheet: glass 70.71 x 128.44 x 0.50, AA 68.31 x 121.44, Pol+Cell 0.679
@@ -81,6 +82,8 @@ def parse_args():
                    help='end where the FPC folds behind the panel (the stock LCD FPC is on the right)')
     p.add_argument('--fpc-bend', type=float, default=0.9,
                    help='how far the folded FPC sticks out past the glass end')
+    p.add_argument('--fold-depth', type=float, default=1.2,
+                   help='room the folded FPC and its parts need under the glass back')
     p.add_argument('--glass-cx', type=float, default=None,
                    help='X centre of the glass; default centres glass + FPC bend in the panel')
     p.add_argument('--aa-cx', type=float, default=None,
@@ -105,7 +108,10 @@ def parse_args():
                    help='new half width there (68.8 = the middle frame side lugs)')
     p.add_argument('--min-wall', type=float, default=0.7, help='smallest side wall left around the pocket')
     p.add_argument('--suffix', default='', help='appended to the output file names')
-    a = p.parse_args()
+    return p
+
+
+def finish_args(a):
     fpc_end = a.aa_offset_fpc
     other_end = a.glass_w - a.aa_w - a.aa_offset_fpc
     sign = 1 if a.fpc_side == 'right' else -1
@@ -114,6 +120,10 @@ def parse_args():
     elif a.glass_cx is None:
         a.glass_cx = -sign * a.fpc_bend / 2
     return a
+
+
+def parse_args():
+    return finish_args(make_parser().parse_args())
 
 
 def box(x0, x1, y0, y1, z0, z1):
@@ -239,12 +249,12 @@ def edge(p0, p1, mid=None):
     return BRepBuilderAPI_MakeEdge(curve).Edge()
 
 
-def side_bulge(a, pocket, side):
-    """Extension of the plate past the stock side edge, with the stock 45 degree edge chamfer.
+def bulge_face(a, pocket, z):
+    """Right-hand outline of the widened side, as a face at height z.
 
     The outline leaves the stock edge through a concave R1.5 blend, runs out to
     --widen-x with R1.5 corners and comes back the same way, far enough past the
-    pocket ends to keep the corner walls thick. Built on the right, mirrored for the left.
+    pocket ends to keep the corner walls thick. It overlaps the stock part by 1.5 mm.
     """
     r, R, e, x_in = 1.5, 1.5, 0.5, EDGE_X - 1.5
     if r + R > a.widen_x - EDGE_X:
@@ -253,7 +263,6 @@ def side_bulge(a, pocket, side):
     y0, y1 = pocket[2] - 3.3, pocket[3] + 3.3
     if y1 + r + e > SIDE_STRAIGHT:
         raise SystemExit('the widened part would run into the top corner of the panel')
-    z = Z_BACK
     P = lambda x, y: gp_Pnt(x, y, z)
     c = 2 ** -0.5
     pts = [
@@ -273,23 +282,38 @@ def side_bulge(a, pocket, side):
     wire = BRepBuilderAPI_MakeWire()
     for p0, p1, mid in pts:
         wire.Add(edge(p0, p1, mid))
-    face = BRepBuilderAPI_MakeFace(wire.Wire()).Face()
-    solid = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, Z_FRONT - Z_BACK)).Shape()
-    # Chamfer the new outer top edge (everything on or past the stock edge line).
+    return BRepBuilderAPI_MakeFace(wire.Wire()).Face()
+
+
+def chamfer_outer(solid, dist, z):
+    """Chamfer the edges at height z that lie on or past the stock side edge line (X >= 65.5)."""
     ch = BRepFilletAPI_MakeChamfer(solid)
     for ed in edges(solid):
         p0, p1 = edge_points(ed)
-        if at_z(Z_FRONT)(p0, p1) and min(p0.X(), p1.X()) > x0 - 1e-6:
-            ch.Add(EDGE_CHAMFER, ed)
+        if at_z(z)(p0, p1) and min(p0.X(), p1.X()) > EDGE_X - 1e-6:
+            ch.Add(dist, ed)
     ch.Build()
     if not ch.IsDone():
         raise RuntimeError('chamfer on the widened edge failed')
-    solid = ch.Shape()
-    if side == 'left':
-        t = gp_Trsf()
-        t.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)))
-        solid = BRepBuilderAPI_Transform(solid, t, True).Shape()
-    return solid
+    return ch.Shape()
+
+
+def mirror_x(shape):
+    t = gp_Trsf()
+    t.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)))
+    return BRepBuilderAPI_Transform(shape, t, True).Shape()
+
+
+def widened_sides(a):
+    return {'none': [], 'fpc': [a.fpc_side], 'both': ['left', 'right']}[a.widen]
+
+
+def side_bulge(a, pocket, side):
+    """Extension of the plate past the stock side edge, with the stock 45 degree edge chamfer."""
+    face = bulge_face(a, pocket, Z_BACK)
+    solid = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, Z_FRONT - Z_BACK)).Shape()
+    solid = chamfer_outer(solid, EDGE_CHAMFER, Z_FRONT)
+    return mirror_x(solid) if side == 'left' else solid
 
 
 def bezel_ring(a, win):
@@ -322,8 +346,7 @@ def main():
     print('window X %7.2f..%6.2f  Y %6.2f..%6.2f  (%.2f x %.2f)' % (*win, win[1] - win[0], win[3] - win[2]))
     print('pocket X %7.2f..%6.2f  Y %6.2f..%6.2f  depth %.2f' % (*pocket, a.pocket_depth))
 
-    fpc = a.fpc_side
-    sides = {'none': [], 'fpc': [fpc], 'both': ['left', 'right']}[a.widen]
+    sides = widened_sides(a)
     half = {sd: (a.widen_x if sd in sides else EDGE_X) for sd in ('left', 'right')}
     walls = {'left': pocket[0] + half['left'], 'right': half['right'] - pocket[1]}
     for sd, w in walls.items():
@@ -370,7 +393,7 @@ def main():
     top = Z_BACK + a.pocket_depth - 0.07
     dummy = box(glass[0], glass[1], glass[2], glass[3], top - a.glass_t, top)
     fx0, fx1 = (glass[1], glass[1] + a.fpc_bend) if a.fpc_side == 'right' else (glass[0] - a.fpc_bend, glass[0])
-    fold = box(fx0, fx1, glass[2] + 3, glass[3] - 3, top - a.glass_t - 1.5, top + 0.05)
+    fold = box(fx0, fx1, glass[2] + 3, glass[3] - 3, top - a.glass_t - a.fold_depth, top + 0.05)
     dummy = boolean(BRepAlgoAPI_Fuse, dummy, fold)
     write_step(dummy, os.path.join(a.out, 'amoled55_display_dummy' + a.suffix + '.step'))
     write_stl(dummy, os.path.join(a.out, 'amoled55_display_dummy' + a.suffix + '.stl'), 0.1)
