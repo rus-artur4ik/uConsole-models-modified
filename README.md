@@ -16,6 +16,7 @@ https://www.clockworkpi.com/product-page/uconsole-3d-models-in-obj-format-free
 
 | Mod | Files |
 |-----|-------|
-| Front panel for a 5.5" 1080×1920 AMOLED (BOE BO055FHM) | [README](mods/amoled-5.5/README.md) · [STL](mods/amoled-5.5/uConsole_front_panel_amoled55.stl) · [STEP](mods/amoled-5.5/uConsole_front_panel_amoled55.step) |
+| Front panel for a 5.5" 1080×1920 AMOLED (BOE BO055FHM), window offset 2.25 mm, stock outline | [README](mods/amoled-5.5/README.md) · [STL](mods/amoled-5.5/uConsole_front_panel_amoled55.stl) · [STEP](mods/amoled-5.5/uConsole_front_panel_amoled55.step) |
+| Same display, window centred, panel widened to 137.6 mm next to the screen | [README](mods/amoled-5.5/README.md#centred-window-uconsole_front_panel_amoled55_centered) · [STL](mods/amoled-5.5/uConsole_front_panel_amoled55_centered.stl) · [STEP](mods/amoled-5.5/uConsole_front_panel_amoled55_centered.step) |
 
 The front panel was extracted from the original STP (solid `brep_6`) with OpenCascade, keeping the original assembly coordinates. Opening the STL on GitHub shows an interactive 3D preview.
